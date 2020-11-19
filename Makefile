@@ -5,14 +5,11 @@ PROG=   rcorder
 SRCS=   ealloc.c hash.c rcorder.c
 MAN=	rcorder.8
 
-CFLAGS+= -DORDER -I. -DDEBUG=1
-LDFLAGS= -lc
-
 .c.o:
-	$(CC) -g -c -o $@ ${CFLAGS} $<
+	$(CC) -g -c -o $@ `./scripts/genflags compile` $<
 
 $(PROG): $(SRCS:.c=.o)
-	$(CC) -g -o $@ $(LDFLAGS) $(SRCS:.c=.o)
+	$(CC) -g -o $@ `./scripts/genflags link` $(SRCS:.c=.o)
 
 clean:
 	$(RM) -Rf *.o *~ $(PROG)

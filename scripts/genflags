@@ -1,0 +1,28 @@
+#!/bin/sh
+
+_os=`uname`
+
+gen_link_flags() {
+   case $_os in
+      FreeBSD)
+	     echo "-lutil"
+             ;;
+      *)
+             echo
+             ;;
+   esac
+        
+}
+
+gen_compile_flags() {
+   echo " -DORDER -I. -DDEBUG=1 "
+}
+
+case $1 in
+link)
+    gen_link_flags
+    ;;
+compile)
+    gen_compile_flags
+    ;;
+esac
