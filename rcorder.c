@@ -180,7 +180,6 @@ static pid_t spawn(filenode *);
 static int wait_child(void);
 static void run_scripts(void);
 static void filenode_unlink(filenode *);
-static int can_run(filenode *);
 static void check_start(filenode *);
 static void generate_needs(void);
 
@@ -207,9 +206,6 @@ main(int argc, char *argv[])
 			break;
 		case 'k':
 			strnode_add(&keep_list, optarg, 0);
-			break;
-		case 'r':
-			run = 1;
 			break;
 		case 's':
 			strnode_add(&skip_list, optarg, 0);
@@ -238,26 +234,9 @@ main(int argc, char *argv[])
 	DPRINTF((stderr, "initialize\n"));
 	crunch_all_files();
 	DPRINTF((stderr, "crunch_all_files\n"));
-	if (run) {
-		/* do some sanity checking on the trampoline script */
-		if (stat(trampoline, &st) == -1)
-			err(1, "failed to stat %s", trampoline);
 
-		if (!S_ISREG(st.st_mode))
-			errx(1, "not a regular file: %s", trampoline);
-
-		if ((st.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH)) == 0)
-			errx(1, "not executable: %s", trampoline);
-
-		if ((kq = kqueue()) == -1)
-			err(1, "kqueue failed");
-
-		run_scripts();
-		DPRINTF((stderr, "run_scripts\n"));
-	} else {
-		generate_ordering();
-		DPRINTF((stderr, "generate_ordering\n"));
-	}
+	generate_ordering();
+	DPRINTF((stderr, "generate_ordering\n"));
 
 	exit(exit_code);
 }
@@ -892,45 +871,6 @@ generate_ordering(void)
 }
 
 /*
- * Check if fn_this can be started by checking its requirements and status.
- */
-static int
-can_run(filenode *fn_this) {
-	provnode	*p;
-	Hash_Entry	*entry;
-	f_reqnode	*r;
-	int		all_set;
-
-	if (fn_this->in_progress == RUNNING
-			|| fn_this->in_progress == LAST
-			|| fn_this->in_progress == SET)
-		return (0);
-
-	all_set = 1;
-
-	if (fn_this->req_list != NULL) {
-		r = fn_this->req_list;
-
-		/* check if all requirements are satisfied */
-		while (r != NULL) {
-			entry = r->entry;
-			p = Hash_GetValue(entry);
-
-			if (p != NULL && p->head == SET)
-				p = p->next;
-
-			if (p != NULL) {
-				all_set = 0;
-				break;
-			}
-
-			r = r->next;
-		}
-	}
-	return (all_set);
-}
-
-/*
  * Generate the need_list for all nodes. This has to happen after all
  * dependencies have been resolved.
  */
@@ -970,184 +910,6 @@ generate_needs(void)
 				r = r->next;
 			}
 		}
-	}
-}
-
-/*
- * fill the need lists and start everything that has no requirements.
- */
-static void
-run_scripts(void)
-{
-	filenode	*fn_this,
-			*t = NULL;
-
-	generate_needs();
-
-	DPRINTF((stderr, "init...\n"));
-	fn_this = fn_head->next;
-	while (fn_this != NULL) {
-		if (fn_this->in_progress == FIRST) {
-			t = fn_this;
-		} else {
-			if (can_run(fn_this))
-				spawn(fn_this);
-		}
-		fn_this = fn_this->next;
-	}
-
-	/*
-	 * If rc_first was set, we have to skip the dependecies before
-	 * rc_first. We can't unset rc_first in the loop above because
-	 * that would allow scripts, that should not started, to run.
-	 */
-	if (t) {
-		rc_first = NULL;
-		t->in_progress = RESET;
-		spawn(t);
-		fn_this = fn_head->next;
-		while (fn_this != NULL) {
-			if (can_run(fn_this))
-				spawn(fn_this);
-			fn_this = fn_this->next;
-		}
-	}
-
-	DPRINTF((stderr, "wait ...\n"));
-	while (childs > 0)
-		wait_child();
-	exit(0);
-}
-
-
-/*
- * Start a rc script for a filenode.
- */
-static pid_t
-spawn(filenode *fn)
-{
-	struct kevent	event;
-	pid_t		p;
-	char		*args[] = {trampoline, fn->filename, script_arg, NULL};
-
-	if (fn->in_progress == SET || fn->in_progress == RUNNING)
-		return (0);
-
-	if (fn->in_progress == FIRST)
-		return (0);
-
-	if (fn->in_progress == LAST)
-		return (0);
-
-	if (rc_first != NULL) {
-		filenode_unlink(fn);
-		check_start(fn);
-		return (1);
-	}
-
-	if (!(skip_ok(fn) && keep_ok(fn))) {
-		filenode_unlink(fn);
-		check_start(fn);
-		return (1);
-	}
-
-	DPRINTF((stderr, "spawn: %s\n", fn->filename));
-	childs++;
-	p = fork();
-
-	if (p == -1) {
-		if (errno == EAGAIN)
-			return (0);
-		err(1, "fork");
-	}
-
-	/* parent */
-	if (p > 0) {
-		EV_SET(&event, p, EVFILT_PROC,
-				EV_ADD | EV_ENABLE | EV_ONESHOT,
-				NOTE_EXIT, 0, fn);
-
-		if (kevent(kq, &event, 1, NULL, 0, NULL) == -1) {
-			if (errno == EINTR)
-				return (0);
-			err(1, "kevent");
-		}
-
-		fn->in_progress = RUNNING;
-		return (p);
-	}
-
-	/* child */
-	execv(args[0], args);
-	exit(1);
-}
-
-/*
- * Wait for at least one child process to exit. We block for a maximum
- * of 20 seconds. After that, collect what is available.
- */
-static int
-wait_child(void)
-{
-	struct kevent	event;
-	filenode	*f;
-	int		ret;
-	struct timespec	ts;
-
-	ts.tv_sec = 20;
-	ts.tv_nsec = 0;
-
-	while (1) {
-		ret = kevent(kq, NULL, 0, &event, 1, &ts);
-
-		if (ret == 0)
-			break;
-
-		ts.tv_sec = 0;
-
-		if (ret == -1) {
-			if (errno == EINTR)
-				break;
-			err(1, "kevent");
-		}
-
-		/*
-		 * ignore waitpid errors and exit status; nothing we can do.
-		 * just collect childs.
-		 */
-		waitpid(event.ident, NULL, WNOHANG);
-		childs--;
-
-		f = (filenode *) event.udata;
-
-		if (event.fflags & NOTE_EXIT) {
-			DPRINTF((stderr, "exit: %s (%d)\n", f->filename, event.ident));
-			filenode_unlink(f);
-			check_start(f);
-		}
-	}
-
-	return (0);
-}
-
-/*
- * For f check which nodes that require it can be started. and start them.
- */
-static void
-check_start(filenode *f)
-{
-	filenode *fn;
-	f_neednode *n;
-
-	if (f->need_list == NULL)
-		return;
-
-	n = f->need_list;
-	while (n != NULL) {
-		fn = n->entry;
-		if(can_run(fn))
-			spawn(fn);
-		n = n->next;
 	}
 }
 

@@ -5,19 +5,14 @@ PROG=   rcorder
 SRCS=   ealloc.c hash.c rcorder.c
 MAN=	rcorder.8
 
-LDADD=	-lutil
-DPADD=	${LIBUTIL}
-
-WARNS?=	6
-# XXX hack for make's hash.[ch]
 CFLAGS+= -DORDER -I. -DDEBUG=1
+LDFLAGS=
 
-SRCS+=	util.h
-CLEANFILES+=	util.h
+.c.o:
+	$(CC) -g -c -o $@ ${CFLAGS} $<
 
-util.h:
-	test -f ${.CURDIR}/../../lib/libutil/libutil.h ${.TARGET} && \
-	ln -sf ${.CURDIR}/../../lib/libutil/libutil.h ${.TARGET} || \
-	ln -sf /usr/include/libutil.h ${.TARGET}
+$(PROG): $(SRCS:.c=.o)
+	$(CC) -g -o $@ $(LDFLAGS) $(SRCS:.c=.o)
 
-.include <bsd.prog.mk>
+clean:
+	$(RM) -Rf *.o *~ $(PROG)
