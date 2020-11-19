@@ -46,7 +46,11 @@ __FBSDID("$FreeBSD: stable/8/sbin/rcorder/rcorder.c 173412 2007-11-07 10:53:41Z 
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#if __FreeBSD__ >= 12
+#include <libutil.h>
+#else
 #include <util.h>
+#endif
 #include <sys/types.h>
 #include <sys/event.h>
 #include <sys/time.h>
