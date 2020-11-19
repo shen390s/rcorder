@@ -6,7 +6,7 @@ SRCS=   ealloc.c hash.c rcorder.c
 MAN=	rcorder.8
 
 CFLAGS+= -DORDER -I. -DDEBUG=1
-LDFLAGS=
+LDFLAGS= -lc
 
 .c.o:
 	$(CC) -g -c -o $@ ${CFLAGS} $<
