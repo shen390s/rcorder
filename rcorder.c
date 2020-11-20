@@ -62,11 +62,26 @@ __FBSDID("$FreeBSD: stable/8/sbin/rcorder/rcorder.c 173412 2007-11-07 10:53:41Z 
 #include "sprite.h"
 #include "hash.h"
 
+#define XSTR(X) #X
+#define STR(X) XSTR(X)
+
 #ifdef DEBUG
-int debug = 0;
+int debug = DEBUG;
 # define	DPRINTF(args) if (debug) { fflush(stdout); fprintf args; }
 #else
 # define	DPRINTF(args)
+#endif
+
+#if !defined(OS_NAME)
+static char *os_name = "unknown";
+#else
+static char *os_name = STR(OS_NAME) ;
+#endif
+
+#if !defined(ARCH_NAME)
+static char *arch_name = "unknown";
+#else
+static char *arch_name = STR(ARCH_NAME);
 #endif
 
 #define REQUIRE_STR	"# REQUIRE:"
@@ -90,8 +105,6 @@ char **file_list;
 int kq;
 int childs = 0;
 char d_script_arg[] = "faststart";
-char d_trampoline[] = "/etc/rc.trampoline";
-char *trampoline = d_trampoline;
 char *script_arg = d_script_arg;
 char *rc_first = NULL;
 char *rc_last = NULL;
@@ -193,8 +206,19 @@ main(int argc, char *argv[])
 	int ch;
 	int run = 0;
 	struct stat st;
+	char buf[128];
 
-	while ((ch = getopt(argc, argv, "a:df:k:l:rs:T:")) != -1)
+	/* Add !OS to skip list */
+	sprintf(buf,"!%s", os_name);
+	DPRINTF((stderr, "add %s to skip keyword\n", buf));
+	strnode_add(&skip_list, buf, 0);
+
+	/* Add !ARCH to skip list */
+	sprintf(buf,"!%s", arch_name);
+	DPRINTF((stderr, "add %s to skip keyword\n", buf));
+	strnode_add(&skip_list, buf, 0);
+	
+	while ((ch = getopt(argc, argv, "a:df:k:l:rs:")) != -1)
 		switch (ch) {
 		case 'a':
 			script_arg = optarg;
@@ -213,9 +237,6 @@ main(int argc, char *argv[])
 			break;
 		case 's':
 			strnode_add(&skip_list, optarg, 0);
-			break;
-		case 'T':
-			trampoline = optarg;
 			break;
 		case 'f':
 			rc_first = optarg;

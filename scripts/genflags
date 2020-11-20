@@ -1,6 +1,7 @@
 #!/bin/sh
 
-_os=`uname`
+_os=`uname -s`
+_arch=`uname -m`
 
 gen_link_flags() {
    case $_os in
@@ -15,7 +16,7 @@ gen_link_flags() {
 }
 
 gen_compile_flags() {
-   echo " -DORDER -I. -DDEBUG=1 "
+   echo " -DORDER -I. -DDEBUG=0 -DOS_NAME=$_os -DARCH_NAME=$_arch "
 }
 
 case $1 in
